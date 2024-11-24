@@ -4,7 +4,7 @@ import os
 
 app = Flask(__name__)
 
-# Initialize the Google Maps client
+# Initialize the Google Maps client using environment variables
 gmaps = googlemaps.Client(key=os.getenv("GOOGLE_MAPS_API_KEY"))
 
 @app.route('/nearby-recycling', methods=['POST'])
@@ -12,10 +12,10 @@ def nearby_recycling():
     try:
         # Get location data from the request
         data = request.json
-        user_location = data.get("location")  # Format: "latitude,longitude"
+        user_location = data.get("location")  # Format: {"location": "latitude,longitude"}
 
         if not user_location:
-            return jsonify({"status": "error", "message": "Location is required and must be in 'latitude,longitude' format."}), 400
+            return jsonify({"status": "error", "message": "No location provided"}), 400
 
         # Query Google Places API for recycling centers within 10km
         results = gmaps.places_nearby(
@@ -25,26 +25,25 @@ def nearby_recycling():
             type="establishment"  # General establishments
         )
 
-        # Check if results are empty
-        if not results.get("results"):
-            return jsonify({"status": "success", "places": [], "message": "No nearby recycling centers found."})
-
-        # Return the names and addresses of nearby places
+        # Extract useful information
         places = [
             {
                 "name": place["name"],
                 "address": place.get("vicinity", "Address not available"),
-                "location": {
-                    "latitude": place["geometry"]["location"]["lat"],
-                    "longitude": place["geometry"]["location"]["lng"]
-                }
+                "location": place["geometry"]["location"]
             }
-            for place in results["results"]
+            for place in results.get("results", [])
         ]
+
+        if not places:
+            return jsonify({"status": "success", "message": "No recycling centers found within 10km", "places": []})
+
         return jsonify({"status": "success", "places": places})
 
+    except googlemaps.exceptions.ApiError as e:
+        return jsonify({"status": "error", "message": f"API error: {str(e)}"}), 500
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({"status": "error", "message": f"Unexpected error: {str(e)}"}), 500
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+    app.run(debug=True, host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
